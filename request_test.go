@@ -121,12 +121,12 @@ func TestUnmarshalPayloadWithPointerAttr_AbsentVal(t *testing.T) {
 	}
 }
 
-func TestUnmarshalToStructWithPointerAttr_BadType(t *testing.T) {
+func TestUnmarshalToStructWithPointerAttr_BadType_bool(t *testing.T) {
 	out := new(WithPointer)
 	in := map[string]interface{}{
 		"name": true, // This is the wrong type.
 	}
-	expectedErrorMessage := ErrUnsupportedPtrType.Error()
+	expectedErrorMessage := "jsonapi: Can't unmarshal true (bool) to struct field `Name`, which is a pointer to `string`"
 
 	err := UnmarshalPayload(sampleWithPointerPayload(in), out)
 
@@ -135,6 +135,71 @@ func TestUnmarshalToStructWithPointerAttr_BadType(t *testing.T) {
 	}
 	if err.Error() != expectedErrorMessage {
 		t.Fatalf("Unexpected error message: %s", err.Error())
+	}
+	if _, ok := err.(ErrUnsupportedPtrType); !ok {
+		t.Fatalf("Unexpected error type: %s", reflect.TypeOf(err))
+	}
+}
+
+func TestUnmarshalToStructWithPointerAttr_BadType_MapPtr(t *testing.T) {
+	out := new(WithPointer)
+	in := map[string]interface{}{
+		"name": &map[string]interface{}{"a": 5}, // This is the wrong type.
+	}
+	expectedErrorMessage := "jsonapi: Can't unmarshal map[a:5] (map) to struct field `Name`, which is a pointer to `string`"
+
+	err := UnmarshalPayload(sampleWithPointerPayload(in), out)
+
+	if err == nil {
+		t.Fatalf("Expected error due to invalid type.")
+	}
+	if err.Error() != expectedErrorMessage {
+		t.Fatalf("Unexpected error message: %s", err.Error())
+	}
+	if _, ok := err.(ErrUnsupportedPtrType); !ok {
+		t.Fatalf("Unexpected error type: %s", reflect.TypeOf(err))
+	}
+}
+
+func TestUnmarshalToStructWithPointerAttr_BadType_Struct(t *testing.T) {
+	out := new(WithPointer)
+	type FooStruct struct{ A int }
+	in := map[string]interface{}{
+		"name": FooStruct{A: 5}, // This is the wrong type.
+	}
+	expectedErrorMessage := "jsonapi: Can't unmarshal map[A:5] (map) to struct field `Name`, which is a pointer to `string`"
+
+	err := UnmarshalPayload(sampleWithPointerPayload(in), out)
+
+	if err == nil {
+		t.Fatalf("Expected error due to invalid type.")
+	}
+	if err.Error() != expectedErrorMessage {
+		t.Fatalf("Unexpected error message: %s", err.Error())
+	}
+	if _, ok := err.(ErrUnsupportedPtrType); !ok {
+		t.Fatalf("Unexpected error type: %s", reflect.TypeOf(err))
+	}
+}
+
+func TestUnmarshalToStructWithPointerAttr_BadType_IntSlice(t *testing.T) {
+	out := new(WithPointer)
+	type FooStruct struct{ A, B int }
+	in := map[string]interface{}{
+		"name": []int{4, 5}, // This is the wrong type.
+	}
+	expectedErrorMessage := "jsonapi: Can't unmarshal [4 5] (slice) to struct field `Name`, which is a pointer to `string`"
+
+	err := UnmarshalPayload(sampleWithPointerPayload(in), out)
+
+	if err == nil {
+		t.Fatalf("Expected error due to invalid type.")
+	}
+	if err.Error() != expectedErrorMessage {
+		t.Fatalf("Unexpected error message: %s", err.Error())
+	}
+	if _, ok := err.(ErrUnsupportedPtrType); !ok {
+		t.Fatalf("Unexpected error type: %s", reflect.TypeOf(err))
 	}
 }
 
@@ -236,7 +301,10 @@ func TestUnmarshalSetsID(t *testing.T) {
 func TestUnmarshal_nonNumericID(t *testing.T) {
 	data := samplePayloadWithoutIncluded()
 	data["data"].(map[string]interface{})["id"] = "non-numeric-id"
-	payload, _ := payload(data)
+	payload, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
 	in := bytes.NewReader(payload)
 	out := new(Post)
 
@@ -337,7 +405,10 @@ func TestUnmarshalInvalidISO8601(t *testing.T) {
 }
 
 func TestUnmarshalRelationshipsWithoutIncluded(t *testing.T) {
-	data, _ := payload(samplePayloadWithoutIncluded())
+	data, err := json.Marshal(samplePayloadWithoutIncluded())
+	if err != nil {
+		t.Fatal(err)
+	}
 	in := bytes.NewReader(data)
 	out := new(Post)
 
@@ -703,6 +774,86 @@ func TestManyPayload_withLinks(t *testing.T) {
 	}
 }
 
+func TestUnmarshalCustomTypeAttributes(t *testing.T) {
+	customInt := CustomIntType(5)
+	customFloat := CustomFloatType(1.5)
+	customString := CustomStringType("Test")
+
+	data := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "customtypes",
+			"id":   "1",
+			"attributes": map[string]interface{}{
+				"int":        5,
+				"intptr":     5,
+				"intptrnull": nil,
+
+				"float":  1.5,
+				"string": "Test",
+			},
+		},
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse JSON API payload
+	customAttributeTypes := new(CustomAttributeTypes)
+	if err := UnmarshalPayload(bytes.NewReader(payload), customAttributeTypes); err != nil {
+		t.Fatal(err)
+	}
+
+	if expected, actual := customInt, customAttributeTypes.Int; expected != actual {
+		t.Fatalf("Was expecting custom int to be `%d`, got `%d`", expected, actual)
+	}
+	if expected, actual := customInt, *customAttributeTypes.IntPtr; expected != actual {
+		t.Fatalf("Was expecting custom int pointer to be `%d`, got `%d`", expected, actual)
+	}
+	if customAttributeTypes.IntPtrNull != nil {
+		t.Fatalf("Was expecting custom int pointer to be <nil>, got `%d`", customAttributeTypes.IntPtrNull)
+	}
+
+	if expected, actual := customFloat, customAttributeTypes.Float; expected != actual {
+		t.Fatalf("Was expecting custom float to be `%f`, got `%f`", expected, actual)
+	}
+	if expected, actual := customString, customAttributeTypes.String; expected != actual {
+		t.Fatalf("Was expecting custom string to be `%s`, got `%s`", expected, actual)
+	}
+}
+
+func TestUnmarshalCustomTypeAttributes_ErrInvalidType(t *testing.T) {
+	data := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "customtypes",
+			"id":   "1",
+			"attributes": map[string]interface{}{
+				"int":        "bad",
+				"intptr":     5,
+				"intptrnull": nil,
+
+				"float":  1.5,
+				"string": "Test",
+			},
+		},
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse JSON API payload
+	customAttributeTypes := new(CustomAttributeTypes)
+	err = UnmarshalPayload(bytes.NewReader(payload), customAttributeTypes)
+	if err == nil {
+		t.Fatal("Expected an error unmarshalling the payload due to type mismatch, got none")
+	}
+
+	if err != ErrInvalidType {
+		t.Fatalf("Expected error to be %v, was %v", ErrInvalidType, err)
+	}
+}
+
 func samplePayloadWithoutIncluded() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
@@ -734,11 +885,6 @@ func samplePayloadWithoutIncluded() map[string]interface{} {
 			},
 		},
 	}
-}
-
-func payload(data map[string]interface{}) (result []byte, err error) {
-	result, err = json.Marshal(data)
-	return
 }
 
 func samplePayload() io.Reader {
@@ -944,4 +1090,219 @@ func sampleSerializedEmbeddedTestModel() *Blog {
 	UnmarshalPayload(out, blog)
 
 	return blog
+}
+
+func TestUnmarshalNestedStructPtr(t *testing.T) {
+	type Director struct {
+		Firstname string `jsonapi:"attr,firstname"`
+		Surname   string `jsonapi:"attr,surname"`
+	}
+	type Movie struct {
+		ID       string    `jsonapi:"primary,movies"`
+		Name     string    `jsonapi:"attr,name"`
+		Director *Director `jsonapi:"attr,director"`
+	}
+	sample := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "movies",
+			"id":   "123",
+			"attributes": map[string]interface{}{
+				"name": "The Shawshank Redemption",
+				"director": map[string]interface{}{
+					"firstname": "Frank",
+					"surname":   "Darabont",
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := bytes.NewReader(data)
+	out := new(Movie)
+
+	if err := UnmarshalPayload(in, out); err != nil {
+		t.Fatal(err)
+	}
+
+	if out.Name != "The Shawshank Redemption" {
+		t.Fatalf("expected out.Name to be `The Shawshank Redemption`, but got `%s`", out.Name)
+	}
+	if out.Director.Firstname != "Frank" {
+		t.Fatalf("expected out.Director.Firstname to be `Frank`, but got `%s`", out.Director.Firstname)
+	}
+	if out.Director.Surname != "Darabont" {
+		t.Fatalf("expected out.Director.Surname to be `Darabont`, but got `%s`", out.Director.Surname)
+	}
+}
+
+func TestUnmarshalNestedStruct(t *testing.T) {
+	boss := map[string]interface{}{
+		"firstname": "Hubert",
+		"surname":   "Farnsworth",
+		"age":       176,
+		"hired-at":  "2016-08-17T08:27:12Z",
+	}
+
+	sample := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "companies",
+			"id":   "123",
+			"attributes": map[string]interface{}{
+				"name":       "Planet Express",
+				"boss":       boss,
+				"founded-at": "2016-08-17T08:27:12Z",
+				"teams": []map[string]interface{}{
+					map[string]interface{}{
+						"name": "Dev",
+						"members": []map[string]interface{}{
+							map[string]interface{}{"firstname": "Sean"},
+							map[string]interface{}{"firstname": "Iz"},
+						},
+						"leader": map[string]interface{}{"firstname": "Iz"},
+					},
+					map[string]interface{}{
+						"name": "DxE",
+						"members": []map[string]interface{}{
+							map[string]interface{}{"firstname": "Akshay"},
+							map[string]interface{}{"firstname": "Peri"},
+						},
+						"leader": map[string]interface{}{"firstname": "Peri"},
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := bytes.NewReader(data)
+	out := new(Company)
+
+	if err := UnmarshalPayload(in, out); err != nil {
+		t.Fatal(err)
+	}
+
+	if out.Boss.Firstname != "Hubert" {
+		t.Fatalf("expected `Hubert` at out.Boss.Firstname, but got `%s`", out.Boss.Firstname)
+	}
+
+	if out.Boss.Age != 176 {
+		t.Fatalf("expected `176` at out.Boss.Age, but got `%d`", out.Boss.Age)
+	}
+
+	if out.Boss.HiredAt.IsZero() {
+		t.Fatalf("expected out.Boss.HiredAt to be zero, but got `%t`", out.Boss.HiredAt.IsZero())
+	}
+
+	if len(out.Teams) != 2 {
+		t.Fatalf("expected len(out.Teams) to be 2, but got `%d`", len(out.Teams))
+	}
+
+	if out.Teams[0].Name != "Dev" {
+		t.Fatalf("expected out.Teams[0].Name to be `Dev`, but got `%s`", out.Teams[0].Name)
+	}
+
+	if out.Teams[1].Name != "DxE" {
+		t.Fatalf("expected out.Teams[1].Name to be `DxE`, but got `%s`", out.Teams[1].Name)
+	}
+
+	if len(out.Teams[0].Members) != 2 {
+		t.Fatalf("expected len(out.Teams[0].Members) to be 2, but got `%d`", len(out.Teams[0].Members))
+	}
+
+	if len(out.Teams[1].Members) != 2 {
+		t.Fatalf("expected len(out.Teams[1].Members) to be 2, but got `%d`", len(out.Teams[1].Members))
+	}
+
+	if out.Teams[0].Members[0].Firstname != "Sean" {
+		t.Fatalf("expected out.Teams[0].Members[0].Firstname to be `Sean`, but got `%s`", out.Teams[0].Members[0].Firstname)
+	}
+
+	if out.Teams[0].Members[1].Firstname != "Iz" {
+		t.Fatalf("expected out.Teams[0].Members[1].Firstname to be `Iz`, but got `%s`", out.Teams[0].Members[1].Firstname)
+	}
+
+	if out.Teams[1].Members[0].Firstname != "Akshay" {
+		t.Fatalf("expected out.Teams[1].Members[0].Firstname to be `Akshay`, but got `%s`", out.Teams[1].Members[0].Firstname)
+	}
+
+	if out.Teams[1].Members[1].Firstname != "Peri" {
+		t.Fatalf("expected out.Teams[1].Members[1].Firstname to be `Peri`, but got `%s`", out.Teams[1].Members[1].Firstname)
+	}
+
+	if out.Teams[0].Leader.Firstname != "Iz" {
+		t.Fatalf("expected out.Teams[0].Leader.Firstname to be `Iz`, but got `%s`", out.Teams[0].Leader.Firstname)
+	}
+
+	if out.Teams[1].Leader.Firstname != "Peri" {
+		t.Fatalf("expected out.Teams[1].Leader.Firstname to be `Peri`, but got `%s`", out.Teams[1].Leader.Firstname)
+	}
+}
+
+func TestUnmarshalNestedStructSlice(t *testing.T) {
+
+	fry := map[string]interface{}{
+		"firstname": "Philip J.",
+		"surname":   "Fry",
+		"age":       25,
+		"hired-at":  "2016-08-17T08:27:12Z",
+	}
+
+	bender := map[string]interface{}{
+		"firstname": "Bender Bending",
+		"surname":   "Rodriguez",
+		"age":       19,
+		"hired-at":  "2016-08-17T08:27:12Z",
+	}
+
+	deliveryCrew := map[string]interface{}{
+		"name": "Delivery Crew",
+		"members": []interface{}{
+			fry,
+			bender,
+		},
+	}
+
+	sample := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "companies",
+			"id":   "123",
+			"attributes": map[string]interface{}{
+				"name": "Planet Express",
+				"teams": []interface{}{
+					deliveryCrew,
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := bytes.NewReader(data)
+	out := new(Company)
+
+	if err := UnmarshalPayload(in, out); err != nil {
+		t.Fatal(err)
+	}
+
+	if out.Teams[0].Name != "Delivery Crew" {
+		t.Fatalf("Nested struct not unmarshalled: Expected `Delivery Crew` but got `%s`", out.Teams[0].Name)
+	}
+
+	if len(out.Teams[0].Members) != 2 {
+		t.Fatalf("Nested struct not unmarshalled: Expected to have `2` Members but got `%d`",
+			len(out.Teams[0].Members))
+	}
+
+	if out.Teams[0].Members[0].Firstname != "Philip J." {
+		t.Fatalf("Nested struct not unmarshalled: Expected `Philip J.` but got `%s`",
+			out.Teams[0].Members[0].Firstname)
+	}
 }

@@ -181,7 +181,7 @@ to-many from being serialized.
 **All `Marshal` and `Unmarshal` methods expect pointers to struct
 instance or slices of the same contained with the `interface{}`s**
 
-Now you have your structs prepared to be seralized or materialized, What
+Now you have your structs prepared to be serialized or materialized, What
 about the rest?
 
 ### Create Record Example
@@ -345,33 +345,19 @@ func (post Post) JSONAPIRelationshipMeta(relation string) *Meta {
 
 ### Custom types
 
-If you need to support custom types (e.g. for custom time formats), you'll need to implement the json.Marshaler and json.Unmarshaler interfaces on the type.
+Custom types are supported for primitive types, only, as attributes.  Examples,
 
 ```go
-// MyTimeFormat is a custom format I invented for fun
-const MyTimeFormat = "The time is 15:04:05. The year is 2006, and it is day 2 of January."
+type CustomIntType int
+type CustomFloatType float64
+type CustomStringType string
+```
 
-// MyTime is a custom type used to handle the custom time format
-type MyTime struct {
-	time.Time
-}
+Types like following are not supported, but may be in the future:
 
-// UnmarshalJSON to implement the json.Unmarshaler interface
-func (m *MyTime) UnmarshalJSON(b []byte) error {
-	t, err := time.Parse(MyTimeFormat, string(b))
-	if err != nil {
-		return err
-	}
-
-	m.Time = t
-
-	return nil
-}
-
-// MarshalJSON to implement the json.Marshaler interface
-func (m *MyTime) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.Time.Format(MyTimeFormat))
-}
+```go
+type CustomMapType map[string]interface{}
+type CustomSliceMapType []map[string]interface{}
 ```
 
 ### Errors
