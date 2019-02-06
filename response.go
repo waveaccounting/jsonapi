@@ -26,6 +26,9 @@ var (
 	// ErrUnexpectedType is returned when marshalling an interface; the interface
 	// had to be a pointer or a slice; otherwise this error is returned.
 	ErrUnexpectedType = errors.New("models should be a struct pointer or slice of struct pointers")
+
+	//map to track visited nodes during marshalling.  Reset by Marshal on each invocation
+	visitedNodes = make(map[string]*Node)
 )
 
 // MarshalPayload writes a jsonapi response for one or many records. The
@@ -75,6 +78,10 @@ func MarshalPayload(w io.Writer, models interface{}) error {
 // and doesn't write out results. Useful if you use your own JSON rendering
 // library.
 func Marshal(models interface{}) (Payloader, error) {
+
+	//reset map
+	visitedNodes = make(map[string]*Node)
+
 	switch vals := reflect.ValueOf(models); vals.Kind() {
 	case reflect.Slice:
 		m, err := convertToSliceInterface(&models)
@@ -277,6 +284,17 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 			}
 
 			node.Type = args[1]
+
+			//if the node has already been visited, return a pointer to the existing Node to
+			//avoid infinite loops
+
+			entityID := node.ID + node.Type
+			if visitedNodes[entityID] != nil {
+				return visitedNodes[entityID], nil
+			}
+
+			//otherwise add it to the visited list for future use and proceed
+			visitedNodes[entityID] = node
 		} else if annotation == annotationClientID {
 			clientID := fieldValue.String()
 			if clientID != "" {
