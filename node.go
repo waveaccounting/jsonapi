@@ -68,7 +68,7 @@ type Node struct {
 
 // RelationshipOneNode is used to represent a generic has one JSON API relation
 type RelationshipOneNode struct {
-	Data  *Node  `json:"data,omitempty"`
+	Data  *Node  `json:"-"`
 	Links *Links `json:"links,omitempty"`
 	Meta  *Meta  `json:"meta,omitempty"`
 }
@@ -76,6 +76,22 @@ type RelationshipOneNode struct {
 // RelationshipManyNode is used to represent a generic has many JSON API
 // relation
 type RelationshipManyNode struct {
+	Data  []*Node `json:"-"`
+	Links *Links  `json:"links,omitempty"`
+	Meta  *Meta   `json:"meta,omitempty"`
+}
+
+// RelationshipOneNodeInput is used to represent a generic has one JSON API relation
+// for marshaling without data elem
+type RelationshipOneNodeInput struct {
+	Data  *Node  `json:"data,omitempty"`
+	Links *Links `json:"links,omitempty"`
+	Meta  *Meta  `json:"meta,omitempty"`
+}
+
+// RelationshipManyNodeInput is used to represent a generic has many JSON API
+// relation for unmarshaling without data elem
+type RelationshipManyNodeInput struct {
 	Data  []*Node `json:"data,omitempty"`
 	Links *Links  `json:"links,omitempty"`
 	Meta  *Meta   `json:"meta,omitempty"`

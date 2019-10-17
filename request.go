@@ -263,7 +263,7 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 
 			if isSlice {
 				// to-many relationship
-				relationship := new(RelationshipManyNode)
+				relationship := new(RelationshipManyNodeInput)
 
 				buf := bytes.NewBuffer(nil)
 
@@ -291,7 +291,7 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 				fieldValue.Set(models)
 			} else {
 				// to-one relationships
-				relationship := new(RelationshipOneNode)
+				relationship := new(RelationshipOneNodeInput)
 
 				buf := bytes.NewBuffer(nil)
 
