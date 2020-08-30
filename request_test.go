@@ -1306,3 +1306,47 @@ func TestUnmarshalNestedStructSlice(t *testing.T) {
 			out.Teams[0].Members[0].Firstname)
 	}
 }
+
+func TestUnmarshalStringAsNumeric(t *testing.T) {
+	data := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "conversiontypes",
+			"id":   "1",
+			"attributes": map[string]interface{}{
+				"int":        "5",
+				"intptr":     "5",
+				"intptrnull": nil,
+
+				"float64": "1.5",
+				"bool":    "true",
+			},
+		},
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse JSON API payload
+	conversionAttributeTypes := new(ConversionAttributeTypes)
+	if err := UnmarshalPayload(bytes.NewReader(payload), conversionAttributeTypes); err != nil {
+		t.Fatal(err)
+	}
+
+	if expected, actual := int(5), conversionAttributeTypes.Int; expected != actual {
+		t.Fatalf("Was expecting converted int to be `%d`, got `%d`", expected, actual)
+	}
+	if expected, actual := int(5), *conversionAttributeTypes.IntPtr; expected != actual {
+		t.Fatalf("Was expecting converted int pointer to be `%d`, got `%d`", expected, actual)
+	}
+	if conversionAttributeTypes.IntPtrNull != nil {
+		t.Fatalf("Was expecting converted int pointer to be <nil>, got `%d`", conversionAttributeTypes.IntPtrNull)
+	}
+
+	if expected, actual := float64(1.5), conversionAttributeTypes.Float64; expected != actual {
+		t.Fatalf("Was expecting converted float to be `%f`, got `%f`", expected, actual)
+	}
+	if !conversionAttributeTypes.Bool {
+		t.Fatalf("Was expecting converted bool to be <true>, got `%v`", conversionAttributeTypes.Bool)
+	}
+}

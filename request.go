@@ -29,7 +29,6 @@ var (
 	ErrUnknownFieldNumberType = errors.New("The struct field was not of a known number type")
 	// ErrInvalidType is returned when the given type is incompatible with the expected type.
 	ErrInvalidType = errors.New("Invalid type provided") // I wish we used punctuation.
-
 )
 
 // ErrUnsupportedPtrType is returned when the Struct field was a pointer but
@@ -54,6 +53,28 @@ func (eupt ErrUnsupportedPtrType) Error() string {
 
 func newErrUnsupportedPtrType(rf reflect.Value, t reflect.Type, structField reflect.StructField) error {
 	return ErrUnsupportedPtrType{rf, t, structField}
+}
+
+//ErrCannotParseFromString is returned when JSON string value cannot be parsed into Struct field
+type ErrCannotParseFromString struct {
+	rf reflect.Value
+	t  reflect.Type
+}
+
+func (err ErrCannotParseFromString) Error() string {
+	typeName := err.t.Elem().Name()
+	kind := err.t.Elem().Kind()
+	if kind.String() != "" && kind.String() != typeName {
+		typeName = fmt.Sprintf("%s (%s)", typeName, kind.String())
+	}
+	return fmt.Sprintf(
+		"jsonapi: Cannot parse %+v (%s) to `%s`",
+		err.rf, err.rf.Type().Kind(), typeName,
+	)
+}
+
+func newErrCannotParseFromString(rf reflect.Value, t reflect.Type) error {
+	return ErrCannotParseFromString{rf, t}
 }
 
 // UnmarshalPayload converts an io into a struct instance using jsonapi tags on
@@ -246,8 +267,22 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 				continue
 			}
 
+			// parse optional attribute tag parts
+			var isIso8601 bool
+			var isString bool
+			if len(args) > 2 {
+				for _, arg := range args[2:] {
+					if arg == annotationISO8601 {
+						isIso8601 = true
+					}
+					if arg == annotationString {
+						isString = true
+					}
+				}
+			}
+
 			structField := fieldType
-			value, err := unmarshalAttribute(attribute, args, structField, fieldValue)
+			value, err := unmarshalAttribute(attribute, isIso8601, isString, structField, fieldValue)
 			if err != nil {
 				er = err
 				break
@@ -381,7 +416,8 @@ func assignValue(field, value reflect.Value) {
 
 func unmarshalAttribute(
 	attribute interface{},
-	args []string,
+	isIso8601 bool,
+	isString bool,
 	structField reflect.StructField,
 	fieldValue reflect.Value) (value reflect.Value, err error) {
 	value = reflect.ValueOf(attribute)
@@ -396,7 +432,7 @@ func unmarshalAttribute(
 	// Handle field of type time.Time
 	if fieldValue.Type() == reflect.TypeOf(time.Time{}) ||
 		fieldValue.Type() == reflect.TypeOf(new(time.Time)) {
-		value, err = handleTime(attribute, args, fieldValue)
+		value, err = handleTime(attribute, isIso8601, fieldValue)
 		return
 	}
 
@@ -413,6 +449,12 @@ func unmarshalAttribute(
 		return
 	}
 
+	// Handle field where JSON value is a string
+	if isString && value.Kind() == reflect.String {
+		value, err = handleString(attribute, fieldType, fieldValue)
+		return
+	}
+
 	// JSON value was a float (numeric)
 	if value.Kind() == reflect.Float64 {
 		value, err = handleNumeric(attribute, fieldType, fieldValue)
@@ -421,7 +463,7 @@ func unmarshalAttribute(
 
 	// Field was a Pointer type
 	if fieldValue.Kind() == reflect.Ptr {
-		value, err = handlePointer(attribute, args, fieldType, fieldValue, structField)
+		value, err = handlePointer(attribute, fieldType, fieldValue, structField)
 		return
 	}
 
@@ -444,17 +486,8 @@ func handleStringSlice(attribute interface{}) (reflect.Value, error) {
 	return reflect.ValueOf(values), nil
 }
 
-func handleTime(attribute interface{}, args []string, fieldValue reflect.Value) (reflect.Value, error) {
-	var isIso8601 bool
+func handleTime(attribute interface{}, isIso8601 bool, fieldValue reflect.Value) (reflect.Value, error) {
 	v := reflect.ValueOf(attribute)
-
-	if len(args) > 2 {
-		for _, arg := range args[2:] {
-			if arg == annotationISO8601 {
-				isIso8601 = true
-			}
-		}
-	}
 
 	if isIso8601 {
 		var tm string
@@ -551,9 +584,101 @@ func handleNumeric(
 	return numericValue, nil
 }
 
+func handleString(
+	attribute interface{},
+	fieldType reflect.Type,
+	fieldValue reflect.Value) (reflect.Value, error) {
+	v := reflect.ValueOf(attribute)
+	stringValue := v.String()
+
+	var kind reflect.Kind
+	if fieldValue.Kind() == reflect.Ptr {
+		kind = fieldType.Elem().Kind()
+	} else {
+		kind = fieldType.Kind()
+	}
+
+	var convValue reflect.Value
+	var convErr error
+
+	switch kind {
+	case reflect.String:
+		c := stringValue
+		convValue = reflect.ValueOf(c)
+	case reflect.Bool:
+		var conv bool
+		conv, convErr = strconv.ParseBool(stringValue)
+		c := bool(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Int:
+		var conv int64
+		conv, convErr = strconv.ParseInt(stringValue, 0, 0)
+		c := int(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Int8:
+		var conv int64
+		conv, convErr = strconv.ParseInt(stringValue, 0, 8)
+		c := int8(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Int16:
+		var conv int64
+		conv, convErr = strconv.ParseInt(stringValue, 0, 16)
+		c := int16(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Int32:
+		var conv int64
+		conv, convErr = strconv.ParseInt(stringValue, 0, 32)
+		c := int32(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Int64:
+		var conv int64
+		conv, convErr = strconv.ParseInt(stringValue, 0, 64)
+		c := int64(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Uint:
+		var conv uint64
+		conv, convErr = strconv.ParseUint(stringValue, 0, 0)
+		c := uint(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Uint8:
+		var conv uint64
+		conv, convErr = strconv.ParseUint(stringValue, 0, 8)
+		c := uint8(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Uint16:
+		var conv uint64
+		conv, convErr = strconv.ParseUint(stringValue, 0, 16)
+		c := uint16(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Uint32:
+		var conv uint64
+		conv, convErr = strconv.ParseUint(stringValue, 0, 32)
+		c := uint32(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Uint64:
+		var conv uint64
+		conv, convErr = strconv.ParseUint(stringValue, 0, 64)
+		c := uint64(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Float32:
+		var conv float64
+		conv, convErr = strconv.ParseFloat(stringValue, 32)
+		c := float32(conv)
+		convValue = reflect.ValueOf(&c)
+	case reflect.Float64:
+		var conv float64
+		conv, convErr = strconv.ParseFloat(stringValue, 64)
+		c := float64(conv)
+		convValue = reflect.ValueOf(&c)
+	default:
+		return reflect.Value{}, newErrCannotParseFromString(v, fieldType)
+	}
+
+	return convValue, convErr
+}
+
 func handlePointer(
 	attribute interface{},
-	args []string,
 	fieldType reflect.Type,
 	fieldValue reflect.Value,
 	structField reflect.StructField) (reflect.Value, error) {
