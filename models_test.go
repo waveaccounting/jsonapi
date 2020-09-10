@@ -191,3 +191,14 @@ type CustomAttributeTypes struct {
 	Float  CustomFloatType  `jsonapi:"attr,float"`
 	String CustomStringType `jsonapi:"attr,string"`
 }
+
+type ConversionAttributeTypes struct {
+	ID string `jsonapi:"primary,conversiontypes"`
+
+	Int        int  `jsonapi:"attr,int,string"`
+	IntPtr     *int `jsonapi:"attr,intptr,string"`
+	IntPtrNull *int `jsonapi:"attr,intptrnull,string"`
+
+	Float64 float64 `jsonapi:"attr,float64,string"`
+	Bool    bool    `jsonapi:"attr,bool,string"`
+}
