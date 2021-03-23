@@ -436,6 +436,26 @@ func unmarshalAttribute(
 		return
 	}
 
+	if fieldValue.CanInterface() && value.Kind() == reflect.String {
+		workingVal := fieldValue
+		if workingVal.Kind() == reflect.Ptr && workingVal.IsNil() {
+			workingVal = reflect.New(fieldType.Elem())
+		}
+		fieldIf := workingVal.Interface()
+
+		if unm, ok := fieldIf.(json.Unmarshaler); ok {
+			unmErr := unm.UnmarshalJSON([]byte(value.String()))
+			return workingVal, unmErr
+		} else if workingVal.CanAddr() {
+			fieldPtr := workingVal.Addr().Interface()
+			if unmPtr, ok := fieldPtr.(json.Unmarshaler); ok {
+				unmErr := unmPtr.UnmarshalJSON([]byte(value.String()))
+				return workingVal, unmErr
+			}
+		}
+
+	}
+
 	// Handle field of type struct
 	if fieldValue.Type().Kind() == reflect.Struct {
 		value, err = handleStruct(attribute, fieldValue)
