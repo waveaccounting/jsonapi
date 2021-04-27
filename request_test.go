@@ -1350,3 +1350,38 @@ func TestUnmarshalStringAsNumeric(t *testing.T) {
 		t.Fatalf("Was expecting converted bool to be <true>, got `%v`", conversionAttributeTypes.Bool)
 	}
 }
+
+func TestUnmarshalCustomUnmarshalType(t *testing.T) {
+	data := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "custommarshaltypes",
+			"id":   "1",
+			"attributes": map[string]interface{}{
+				"enum":        "DO_IT",
+				"enumPtr":     "DONT_DO_IT",
+			},
+		},
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse JSON API payload
+	customMarshalTypes := new(CustomMarshalTypes)
+	if err := UnmarshalPayload(bytes.NewReader(payload), customMarshalTypes); err != nil {
+		t.Fatal(err)
+	}
+
+	if expected, actual := DoIt, customMarshalTypes.Enum; expected != actual {
+		t.Fatalf("Was expecting converted enum to be `%d`, got `%d`", expected, actual)
+	}
+
+	if customMarshalTypes.EnumPtr == nil {
+		t.Fatalf("Expecting non-nil enumPtr")
+	}
+
+	if expected, actual := DontDoIt, *customMarshalTypes.EnumPtr; expected != actual {
+		t.Fatalf("Was expecting converted enumPtr to be `%d`, got `%d`", expected, actual)
+	}
+}

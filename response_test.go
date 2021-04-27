@@ -967,3 +967,33 @@ func testBlog() *Blog {
 		},
 	}
 }
+
+func TestMarshalCustomMarshalType(t *testing.T) {
+	enumForPtr := DoIt
+	testModel := &CustomMarshalTypes{ID: "3", Enum: DontDoIt, EnumPtr: &enumForPtr }
+
+	out := bytes.NewBuffer(nil)
+	if err := MarshalPayload(out, testModel); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := new(OnePayload)
+	if err := json.NewDecoder(out).Decode(resp); err != nil {
+		t.Fatal(err)
+	}
+
+	data := resp.Data
+
+	if data.Attributes == nil {
+		t.Fatalf("Expected attributes")
+	}
+
+	if data.Attributes["enum"] != "DONT_DO_IT" {
+		t.Fatal("Custom enum type wasn't marshalled correctly")
+	}
+
+	if data.Attributes["enumPtr"] != "DO_IT" {
+		t.Fatal("Custom enumPtr type wasn't marshalled correctly")
+	}
+
+}

@@ -1,6 +1,7 @@
 package jsonapi
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -202,3 +203,49 @@ type ConversionAttributeTypes struct {
 	Float64 float64 `jsonapi:"attr,float64,string"`
 	Bool    bool    `jsonapi:"attr,bool,string"`
 }
+
+type CustomMarshalEnumType int
+
+const (
+	DoIt CustomMarshalEnumType = iota + 1
+	DontDoIt
+)
+
+var enumStrings = map[CustomMarshalEnumType]string{
+	DoIt: "DO_IT",
+	DontDoIt: "DONT_DO_IT",
+}
+
+func (enum CustomMarshalEnumType) String() string {
+	return enumStrings[enum]
+}
+func (enum CustomMarshalEnumType) IsValid() bool {
+	_, ok := enumStrings[enum]
+	return ok
+}
+
+func (enum *CustomMarshalEnumType) Parse(raw string) error {
+	for k, v := range enumStrings {
+		if v == raw {
+			*enum = k
+			return nil
+		}
+	}
+	return errors.New("unable to parse custom marshal enum type")
+}
+
+func (enum CustomMarshalEnumType) MarshalJSON() ([]byte, error) {
+	return []byte("\""+enum.String()+"\""), nil
+}
+
+func (enum *CustomMarshalEnumType) UnmarshalJSON(bytes []byte) error {
+	return enum.Parse(string(bytes))
+}
+
+type CustomMarshalTypes struct {
+	ID string `jsonapi:"primary,custommarshaltypes"`
+
+	Enum CustomMarshalEnumType `jsonapi:"attr,enum"`
+	EnumPtr *CustomMarshalEnumType `jsonapi:"attr,enumPtr"`
+}
+
